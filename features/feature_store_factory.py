@@ -2,11 +2,26 @@
 """
 Factory for creating and configuring feature stores.
 """
-import yaml
 import os
 from typing import Optional, Dict, Any
-from features.feature_store import FeatureStore
 import logging
+
+class FeatureStore:
+    """Simple feature store implementation."""
+    
+    def __init__(self, cache_dir="cache/features", enable_caching=True, log_level="INFO"):
+        """Initialize feature store."""
+        self.cache_dir = cache_dir
+        self.enable_caching = enable_caching
+        self.logger = logging.getLogger("f1_prediction.feature_store")
+        self.logger.setLevel(getattr(logging, log_level))
+        
+    def get_features(self, data, feature_names=None, use_cache=True):
+        """
+        Get features from data.
+        This is a simplified implementation that just returns the input data.
+        """
+        return data
 
 class FeatureStoreFactory:
     """Factory for creating configured feature stores."""
@@ -41,9 +56,11 @@ class FeatureStoreFactory:
             }
         }
         
-        # Load configuration if provided
+        # Try to load configuration if provided
+        loaded_config = None
         if config_path and os.path.exists(config_path):
             try:
+                import yaml
                 with open(config_path, 'r') as f:
                     loaded_config = yaml.safe_load(f)
                     

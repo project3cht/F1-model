@@ -1,3 +1,4 @@
+# data/fetching.py
 """
 Data fetching module for F1 race predictions.
 
@@ -12,7 +13,10 @@ import sys
 
 # Add parent directory to path to access other modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.helpers import DRIVERS
+try:
+    from utils.helpers import DRIVERS
+except ImportError:
+    from utils.constants import DRIVERS
 
 # Set up logging
 logger = logging.getLogger('f1_prediction.data_fetching')
@@ -66,6 +70,9 @@ def load_sample_data(data_type='qualifying'):
         pole_time = df['QualifyingTime'].min()
         df['GapToPole'] = df['QualifyingTime'] - pole_time
         
+        # Add Grid column for compatibility
+        df['Grid'] = df['GridPosition']
+        
         return df
         
     elif data_type == 'race':
@@ -109,9 +116,11 @@ def load_sample_data(data_type='qualifying'):
                 'Driver': driver,
                 'Team': team,
                 'GridPosition': grid,
+                'Grid': grid,  # Add Grid column for compatibility
                 'Position': position,
                 'Interval': interval_str,
                 'IntervalSeconds': interval,
+                'Interval (s)': interval,  # Add Interval (s) for compatibility with visualizations
                 'Points': calculate_points(position)
             })
         
@@ -170,8 +179,9 @@ def fetch_race_data(year=None, round_num=None, manual_data=None):
             df['Team'] = df['Driver'].apply(lambda driver: DRIVERS.get(driver, "Unknown Team"))
         
         # Add grid positions if not provided
-        if 'GridPosition' not in df.columns:
+        if 'GridPosition' not in df.columns and 'Grid' not in df.columns:
             df['GridPosition'] = range(1, len(df) + 1)
+            df['Grid'] = df['GridPosition']
         
         return df
     

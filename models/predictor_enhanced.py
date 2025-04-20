@@ -1,19 +1,28 @@
 # models/predictor_enhanced.py
-from models.predictor import AdvancedF1Predictor
-from models.monte_carlo import MonteCarloRaceSimulator
-from models.bayesian_models import BayesianRacePredictionModel
-from models.sequence_models import RaceProgressionModel
-from models.ensemble_predictor import EnsembleF1Predictor
-from typing import Dict, List, Optional, Union, Tuple, Any
+"""
+Simplified enhanced predictor that uses the base predictor as fallback.
+"""
+from typing import Dict, List, Optional, Union, Any
 import pandas as pd
 import numpy as np
 import logging
 import os
 from datetime import datetime
 
+# Try to import necessary modules, but provide fallbacks if not available
+try:
+    from models.predictor import AdvancedF1Predictor
+    base_predictor_available = True
+except ImportError:
+    base_predictor_available = False
+    class DummyPredictor:
+        def __init__(self, *args, **kwargs):
+            pass
+    AdvancedF1Predictor = DummyPredictor
+
 class EnhancedF1Predictor:
     """
-    Enhanced F1 predictor with advanced ML techniques and uncertainty estimation.
+    Simplified enhanced F1 predictor that falls back to base predictor.
     """
     
     def __init__(self, 
@@ -33,120 +42,39 @@ class EnhancedF1Predictor:
         
         # Load configuration if provided
         if config_path and os.path.exists(config_path):
-            from config.config import load_config
-            self.config = load_config(config_path)
-            self.logger.info(f"Loaded configuration from {config_path}")
+            try:
+                from config.config import load_config
+                self.config = load_config(config_path)
+                self.logger.info(f"Loaded configuration from {config_path}")
+            except Exception as e:
+                self.logger.warning(f"Error loading config: {e}")
+                self.config = None
         else:
             self.config = None
-            self.logger.warning(f"No configuration file found at {config_path}, using defaults")
+            self.logger.warning(f"No configuration file found at {config_path}")
         
         # Initialize base predictor
         self.base_predictor = AdvancedF1Predictor(name=f"{name}_Base", model_dir=model_dir)
         
-        # Initialize advanced components (but don't build until needed)
-        self.monte_carlo = None
-        self.bayesian_model = None
-        self.sequence_model = None
-        self.ensemble = None
-        
         # Store attributes
         self.name = name
         self.model_dir = model_dir
+        
+        self.logger.info(f"Initialized {name} with base predictor")
     
-    def train(self, 
-             historical_data: pd.DataFrame,
-             race_progression_data: Optional[pd.DataFrame] = None,
-             use_ensemble: bool = True,
-             use_bayesian: bool = False,
-             use_sequence: bool = False,
-             ensemble_weights: Optional[Dict[str, float]] = None) -> 'EnhancedF1Predictor':
+    def train(self, historical_data, **kwargs):
         """
-        Train the enhanced predictor with advanced components.
+        Train the enhanced predictor.
         
         Args:
             historical_data: Historical race data
-            race_progression_data: Historical race progression data for sequence model
-            use_ensemble: Whether to use ensemble approach
-            use_bayesian: Whether to use Bayesian approach
-            use_sequence: Whether to use sequence model
-            ensemble_weights: Custom weights for ensemble
             
         Returns:
-            Trained predictor
+            Self
         """
-        # Train base predictor first
         self.logger.info("Training base predictor")
         self.base_predictor.train(historical_data)
         
-        # Train Bayesian model if requested
-        if use_bayesian:
-            self.logger.info("Training Bayesian model")
-            self.bayesian_model = BayesianRacePredictionModel(
-                model_type='hierarchical',
-                samples=self.config.prediction.simulation_runs if self.config else 2000
-            )
-            self.bayesian_model.train(historical_data)
-        
-        # Train sequence model if requested and data available
-        if use_sequence and race_progression_data is not None:
-            self.logger.info("Training sequence model")
-            self.sequence_model = RaceProgressionModel()
-            
-            # Define sequence features based on available columns
-            sequence_features = [
-                'GridPosition', 'TeamPerformanceFactor', 'DriverPerformanceFactor'
-            ]
-            
-            # Add optional features if available
-            for feature in ['QualifyingGapToPole', 'RaceProgress']:
-                if feature in race_progression_data.columns:
-                    sequence_features.append(feature)
-            
-            self.sequence_model.train(
-                race_progression_data=race_progression_data,
-                feature_cols=sequence_features
-            )
-        
-        # Create ensemble if requested
-        if use_ensemble:
-            self.logger.info("Creating ensemble predictor")
-            
-            # Use provided weights or default
-            weights = ensemble_weights or {
-                'ml_model': 0.7,
-                'factor_model': 0.3,
-                'bayesian_model': 0.2 if use_bayesian else 0.0,
-                'sequence_model': 0.2 if use_sequence else 0.0
-            }
-            
-            # Normalize weights
-            weight_sum = sum(weights.values())
-            if weight_sum > 0:
-                weights = {k: v / weight_sum for k, v in weights.items()}
-            
-            self.ensemble = EnsembleF1Predictor(
-                base_predictor=self.base_predictor,
-                ensemble_weights=weights,
-                logger=self.logger
-            )
-            
-            # Add additional models if available
-            if use_bayesian and self.bayesian_model is not None:
-                self.ensemble.bayesian_model = self.bayesian_model
-            
-            if use_sequence and self.sequence_model is not None:
-                self.ensemble.sequence_model = self.sequence_model
-            
-            # Train ensemble
-            self.ensemble.train(historical_data)
-        
-        # Initialize Monte Carlo simulator
-        self.monte_carlo = MonteCarloRaceSimulator(
-            base_predictor=self.ensemble if self.ensemble else self.base_predictor,
-            n_simulations=self.config.prediction.simulation_runs if self.config else 1000
-        )
-        
-        self.logger.info("Training complete")
         return self
     
     def predict(self, 
@@ -158,14 +86,14 @@ class EnhancedF1Predictor:
                use_monte_carlo: bool = False,
                return_uncertainty: bool = False) -> Union[pd.DataFrame, Dict]:
         """
-        Make predictions with advanced features and uncertainty estimates.
+        Make predictions with the enhanced predictor.
         
         Args:
             quali_data: Qualifying data
             driver_stats: Driver statistics
             team_stats: Team statistics
-            safety_car_prob: Safety car probability (uses config default if None)
-            rain_prob: Rain probability (uses config default if None)
+            safety_car_prob: Safety car probability
+            rain_prob: Rain probability
             use_monte_carlo: Whether to use Monte Carlo simulation
             return_uncertainty: Whether to return uncertainty estimates
             
@@ -187,56 +115,18 @@ class EnhancedF1Predictor:
         self.logger.info(f"Making predictions with safety_car_prob={safety_car_prob}, rain_prob={rain_prob}")
         
         # Use Monte Carlo simulation if requested
-        if use_monte_carlo and self.monte_carlo:
-            self.logger.info("Running Monte Carlo simulation")
-            
-            # Run simulation
-            simulation_results = self.monte_carlo.simulate_race(
-                quali_data=quali_data,
-                base_safety_car_prob=safety_car_prob,
-                base_rain_prob=rain_prob
-            )
-            
-            # Calculate statistics
-            position_probs = self.monte_carlo.calculate_position_probabilities(simulation_results)
-            finishing_stats = self.monte_carlo.calculate_finishing_statistics(simulation_results)
-            
-            # Create deterministic prediction from mean positions
-            mean_positions = finishing_stats[['Driver', 'Position_mean']].copy()
-            mean_positions = mean_positions.sort_values('Position_mean')
-            mean_positions['Position'] = range(1, len(mean_positions) + 1)
-            
-            # Merge with quali data to get team information
-            result = pd.merge(mean_positions, quali_data, on='Driver')
-            
-            # Add interval estimates (simplified)
-            self.base_predictor._calculate_intervals(result)
-            
-            # Calculate points
-            self.base_predictor._calculate_points(result)
-            
-            if return_uncertainty:
-                return {
-                    'predictions': result,
-                    'position_probabilities': position_probs,
-                    'finishing_statistics': finishing_stats,
-                    'simulation_results': simulation_results
-                }
-            else:
-                return result
-        
-        # Use ensemble if available, otherwise base predictor
-        if self.ensemble:
-            self.logger.info("Using ensemble predictor")
-            return self.ensemble.predict(
+        if use_monte_carlo:
+            return self._monte_carlo_prediction(
                 quali_data=quali_data,
                 driver_stats=driver_stats,
                 team_stats=team_stats,
                 safety_car_prob=safety_car_prob,
-                rain_prob=rain_prob
+                rain_prob=rain_prob,
+                return_uncertainty=return_uncertainty
             )
         else:
-            self.logger.info("Using base predictor")
+            # Standard prediction using base predictor
+            self.logger.info("Using base predictor for standard prediction")
             return self.base_predictor.predict(
                 quali_data=quali_data,
                 driver_stats=driver_stats,
@@ -245,28 +135,179 @@ class EnhancedF1Predictor:
                 rain_prob=rain_prob
             )
     
-    def predict_with_bayesian(self, 
-                             quali_data: pd.DataFrame,
-                             return_samples: bool = False) -> Union[pd.DataFrame, Tuple[pd.DataFrame, np.ndarray]]:
+    def _monte_carlo_prediction(self,
+                              quali_data: pd.DataFrame,
+                              driver_stats: Optional[pd.DataFrame] = None,
+                              team_stats: Optional[pd.DataFrame] = None,
+                              safety_car_prob: float = 0.6,
+                              rain_prob: float = 0.0,
+                              return_uncertainty: bool = False) -> Union[pd.DataFrame, Dict]:
         """
-        Make predictions using Bayesian model with uncertainty estimates.
+        Run Monte Carlo simulation for predictions with uncertainty.
         
         Args:
             quali_data: Qualifying data
-            return_samples: Whether to return position samples
+            driver_stats: Driver statistics
+            team_stats: Team statistics
+            safety_car_prob: Safety car probability
+            rain_prob: Rain probability
+            return_uncertainty: Whether to return uncertainty information
             
         Returns:
-            Prediction results, optionally with position samples
+            Prediction results, optionally with uncertainty information
         """
-        if self.bayesian_model is None:
-            raise ValueError("Bayesian model not trained. Call train() with use_bayesian=True first.")
+        self.logger.info("Running Monte Carlo simulation")
         
-        self.logger.info("Making predictions with Bayesian model")
-        return self.bayesian_model.predict(quali_data, return_samples=return_samples)
+        # Number of simulations to run
+        n_sims = 100
+        if self.config and hasattr(self.config.prediction, 'simulation_runs'):
+            n_sims = self.config.prediction.simulation_runs
+        
+        # Run multiple simulations with varying parameters
+        all_results = []
+        
+        for i in range(n_sims):
+            # Vary safety car and rain probabilities slightly
+            sc_prob = min(1.0, max(0.0, safety_car_prob + np.random.normal(0, 0.1)))
+            r_prob = min(1.0, max(0.0, rain_prob + np.random.normal(0, 0.1)))
+            
+            # Make prediction with base predictor
+            sim_result = self.base_predictor.predict(
+                quali_data=quali_data,
+                driver_stats=driver_stats,
+                team_stats=team_stats,
+                safety_car_prob=sc_prob,
+                rain_prob=r_prob
+            )
+            
+            # Add simulation ID
+            sim_result['SimulationId'] = i
+            
+            # Store results
+            all_results.append(sim_result)
+            
+            # Log progress occasionally
+            if (i+1) % 20 == 0:
+                self.logger.info(f"Completed {i+1}/{n_sims} simulations")
+        
+        # Combine all simulation results
+        combined_results = pd.concat(all_results, ignore_index=True)
+        
+        # Calculate statistics
+        stats = self._calculate_monte_carlo_statistics(combined_results)
+        
+        # Create final prediction based on average position
+        final_prediction = self._create_final_prediction(stats, quali_data)
+        
+        if return_uncertainty:
+            return {
+                'predictions': final_prediction,
+                'finishing_statistics': stats,
+                'simulation_results': combined_results
+            }
+        else:
+            return final_prediction
+    
+    def _calculate_monte_carlo_statistics(self, simulation_results: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate statistics from Monte Carlo simulations.
+        
+        Args:
+            simulation_results: Results from all simulations
+            
+        Returns:
+            DataFrame with driver statistics
+        """
+        # Group by driver and calculate statistics
+        driver_stats = simulation_results.groupby('Driver').agg({
+            'Position': ['mean', 'std', 'min', 'max'],
+            'Points': ['mean', 'std', 'min', 'max']
+        })
+        
+        # Flatten column names
+        driver_stats.columns = [f"{col[0]}_{col[1]}" for col in driver_stats.columns]
+        
+        # Calculate win, podium, and points probabilities
+        win_counts = simulation_results[simulation_results['Position'] == 1].groupby('Driver').size()
+        podium_counts = simulation_results[simulation_results['Position'] <= 3].groupby('Driver').size()
+        points_counts = simulation_results[simulation_results['Position'] <= 10].groupby('Driver').size()
+        
+        # Convert to probabilities
+        n_sims = len(simulation_results) // len(driver_stats)
+        win_probs = win_counts / n_sims
+        podium_probs = podium_counts / n_sims
+        points_probs = points_counts / n_sims
+        
+        # Add to stats
+        driver_stats['WinProbability'] = win_probs
+        driver_stats['PodiumProbability'] = podium_probs
+        driver_stats['PointsProbability'] = points_probs
+        
+        # Fill NAs with 0 (drivers who never achieved that result)
+        driver_stats.fillna(0, inplace=True)
+        
+        # Reset index to make Driver a column
+        driver_stats.reset_index(inplace=True)
+        
+        return driver_stats
+    
+    def _create_final_prediction(self, stats: pd.DataFrame, quali_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create final prediction from Monte Carlo statistics.
+        
+        Args:
+            stats: Statistics from Monte Carlo simulations
+            quali_data: Original qualifying data
+            
+        Returns:
+            Final prediction DataFrame
+        """
+        # Sort by mean position
+        sorted_stats = stats.sort_values('Position_mean')
+        
+        # Create results DataFrame
+        results = pd.DataFrame()
+        results['Driver'] = sorted_stats['Driver']
+        results['Position'] = range(1, len(sorted_stats) + 1)
+        
+        # Merge with quali_data to get team and grid position
+        results = pd.merge(results, quali_data[['Driver', 'Team', 'Grid' if 'Grid' in quali_data.columns else 'GridPosition']], 
+                         on='Driver', how='left')
+        
+        # Rename GridPosition to Grid if needed
+        if 'GridPosition' in results.columns and 'Grid' not in results.columns:
+            results.rename(columns={'GridPosition': 'Grid'}, inplace=True)
+        
+        # Calculate intervals
+        results['IntervalSeconds'] = 0.0  # Initialize all to 0
+        
+        # Set intervals based on position gap
+        for i, row in results.iterrows():
+            if row['Position'] == 1:
+                results.loc[i, 'Interval'] = "WINNER"
+            else:
+                # Calculate interval based on position
+                pos = int(row['Position'])
+                # Simple model: ~2 seconds per position, with randomness
+                interval = (pos - 1) * 2 * (0.9 + 0.2 * np.random.random())
+                results.loc[i, 'IntervalSeconds'] = interval
+                results.loc[i, 'Interval'] = f"+{interval:.3f}s"
+        
+        # Add 'Interval (s)' for compatibility with visualizations
+        results['Interval (s)'] = results['IntervalSeconds']
+        
+        # Calculate points
+        points_system = {
+            1: 25, 2: 18, 3: 15, 4: 12, 5: 10,
+            6: 8, 7: 6, 8: 4, 9: 2, 10: 1
+        }
+        results['Points'] = results['Position'].map(lambda pos: points_system.get(pos, 0))
+        
+        return results
     
     def save_models(self, directory: Optional[str] = None) -> Dict[str, str]:
         """
-        Save all models to disk.
+        Save models to disk.
         
         Args:
             directory: Directory to save models (uses model_dir/timestamp if None)
@@ -287,64 +328,28 @@ class EnhancedF1Predictor:
         # Save base predictor
         try:
             base_dir = os.path.join(directory, "base_predictor")
+            if not os.path.exists(base_dir):
+                os.makedirs(base_dir)
+                
             position_path, interval_path = self.base_predictor.save_models(
-                position_filename="position_model.joblib",
-                interval_filename="interval_model.joblib"
+                position_filename=os.path.join(base_dir, "position_model.joblib"),
+                interval_filename=os.path.join(base_dir, "interval_model.joblib")
             )
             saved_paths['base_predictor'] = base_dir
         except Exception as e:
             self.logger.error(f"Error saving base predictor: {e}")
         
-        # Save Bayesian model if available
-        if self.bayesian_model is not None:
-            try:
-                bayesian_dir = os.path.join(directory, "bayesian_model")
-                self.bayesian_model.save(bayesian_dir)
-                saved_paths['bayesian_model'] = bayesian_dir
-            except Exception as e:
-                self.logger.error(f"Error saving Bayesian model: {e}")
-        
-        # Save sequence model if available
-        if self.sequence_model is not None:
-            try:
-                sequence_dir = os.path.join(directory, "sequence_model")
-                self.sequence_model.save(sequence_dir)
-                saved_paths['sequence_model'] = sequence_dir
-            except Exception as e:
-                self.logger.error(f"Error saving sequence model: {e}")
-        
-        # Save ensemble if available
-        if self.ensemble is not None:
-            try:
-                ensemble_dir = os.path.join(directory, "ensemble")
-                self.ensemble.save(ensemble_dir)
-                saved_paths['ensemble'] = ensemble_dir
-            except Exception as e:
-                self.logger.error(f"Error saving ensemble: {e}")
-        
-        # Save config if available
-        if self.config is not None:
-            try:
-                import yaml
-                config_path = os.path.join(directory, "config.yaml")
-                with open(config_path, 'w') as f:
-                    yaml.dump(self.config.__dict__, f)
-                saved_paths['config'] = config_path
-            except Exception as e:
-                self.logger.error(f"Error saving config: {e}")
-        
-        self.logger.info(f"Saved all models to {directory}")
         return saved_paths
     
     def load_models(self, directory: str) -> 'EnhancedF1Predictor':
         """
-        Load all models from disk.
+        Load models from disk.
         
         Args:
             directory: Directory to load models from
             
         Returns:
-            Loaded predictor
+            Self
         """
         # Load base predictor
         base_dir = os.path.join(directory, "base_predictor")
@@ -352,59 +357,15 @@ class EnhancedF1Predictor:
             try:
                 position_path = os.path.join(base_dir, "position_model.joblib")
                 interval_path = os.path.join(base_dir, "interval_model.joblib")
-                self.base_predictor.load_models(position_path, interval_path)
-                self.logger.info(f"Loaded base predictor from {base_dir}")
+                
+                if os.path.exists(position_path) and os.path.exists(interval_path):
+                    self.base_predictor.load_models(position_path, interval_path)
+                    self.logger.info(f"Loaded base predictor from {base_dir}")
+                else:
+                    self.logger.warning(f"Model files not found in {base_dir}")
             except Exception as e:
                 self.logger.error(f"Error loading base predictor: {e}")
+        else:
+            self.logger.warning(f"Base predictor directory not found: {base_dir}")
         
-        # Load Bayesian model if available
-        bayesian_dir = os.path.join(directory, "bayesian_model")
-        if os.path.exists(bayesian_dir):
-            try:
-                self.bayesian_model = BayesianRacePredictionModel()
-                self.bayesian_model.load(bayesian_dir)
-                self.logger.info(f"Loaded Bayesian model from {bayesian_dir}")
-            except Exception as e:
-                self.logger.error(f"Error loading Bayesian model: {e}")
-        
-        # Load sequence model if available
-        sequence_dir = os.path.join(directory, "sequence_model")
-        if os.path.exists(sequence_dir):
-            try:
-                self.sequence_model = RaceProgressionModel()
-                self.sequence_model.load(sequence_dir)
-                self.logger.info(f"Loaded sequence model from {sequence_dir}")
-            except Exception as e:
-                self.logger.error(f"Error loading sequence model: {e}")
-        
-        # Load ensemble if available
-        ensemble_dir = os.path.join(directory, "ensemble")
-        if os.path.exists(ensemble_dir):
-            try:
-                self.ensemble = EnsembleF1Predictor(base_predictor=self.base_predictor)
-                self.ensemble.load(ensemble_dir, self.base_predictor)
-                self.logger.info(f"Loaded ensemble from {ensemble_dir}")
-            except Exception as e:
-                self.logger.error(f"Error loading ensemble: {e}")
-        
-        # Initialize Monte Carlo simulator
-        self.monte_carlo = MonteCarloRaceSimulator(
-            base_predictor=self.ensemble if self.ensemble else self.base_predictor,
-            n_simulations=self.config.prediction.simulation_runs if self.config else 1000
-        )
-        
-        # Load config if available
-        config_path = os.path.join(directory, "config.yaml")
-        if os.path.exists(config_path):
-            try:
-                from config.config import Config
-                import yaml
-                with open(config_path, 'r') as f:
-                    config_dict = yaml.safe_load(f)
-                self.config = Config(**config_dict)
-                self.logger.info(f"Loaded config from {config_path}")
-            except Exception as e:
-                self.logger.error(f"Error loading config: {e}")
-        
-        self.logger.info(f"Loaded all models from {directory}")
         return self

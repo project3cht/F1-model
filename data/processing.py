@@ -1,3 +1,4 @@
+# data/processing.py
 """
 Data processing module for F1 race predictions.
 
@@ -17,7 +18,7 @@ def calculate_driver_stats(historical_data):
     Returns:
         DataFrame: Driver statistics
     """
-    if historical_data.empty:
+    if historical_data is None or len(historical_data) == 0:
         return pd.DataFrame()
     
     driver_stats = []
@@ -26,12 +27,23 @@ def calculate_driver_stats(historical_data):
     for driver, group in historical_data.groupby('Driver'):
         # Calculate statistics
         avg_finish = group['Position'].mean()
-        avg_grid = group['GridPosition'].mean()
-        avg_positions_gained = (group['GridPosition'] - group['Position']).mean()
+        
+        # Grid position may be in 'Grid' or 'GridPosition'
+        grid_col = 'Grid' if 'Grid' in group.columns else 'GridPosition'
+        avg_grid = group[grid_col].mean()
+        
+        # Calculate positions gained
+        if grid_col in group.columns:
+            avg_positions_gained = (group[grid_col] - group['Position']).mean()
+        else:
+            avg_positions_gained = 0
         
         # Calculate finishing rate
         races = len(group)
-        dnfs = sum('DNF' in str(interval) for interval in group['Interval'])
+        dnfs = 0
+        if 'Interval' in group.columns:
+            dnfs = sum('DNF' in str(interval) for interval in group['Interval'])
+        
         finishing_rate = (races - dnfs) / races
         
         # Add to driver stats
@@ -59,7 +71,7 @@ def calculate_team_stats(historical_data):
     Returns:
         DataFrame: Team statistics
     """
-    if historical_data.empty:
+    if historical_data is None or len(historical_data) == 0:
         return pd.DataFrame()
     
     team_stats = []
@@ -68,7 +80,10 @@ def calculate_team_stats(historical_data):
     for team, group in historical_data.groupby('Team'):
         # Calculate statistics
         avg_finish = group['Position'].mean()
-        avg_grid = group['GridPosition'].mean()
+        
+        # Grid position may be in 'Grid' or 'GridPosition'
+        grid_col = 'Grid' if 'Grid' in group.columns else 'GridPosition'
+        avg_grid = group[grid_col].mean() if grid_col in group.columns else 0
         
         # Calculate points
         if 'Points' in group.columns:
@@ -139,7 +154,8 @@ def prepare_prediction_features(quali_data, driver_stats=None, team_stats=None):
         features = pd.merge(features, team_stats, on='Team', how='left')
     
     # Calculate grid position ranking
-    features['GridRank'] = features['GridPosition'].rank(method='min')
+    grid_col = 'Grid' if 'Grid' in features.columns else 'GridPosition'
+    features['GridRank'] = features[grid_col].rank(method='min')
     
     # Handle missing values
     # For drivers without historical data, use average values

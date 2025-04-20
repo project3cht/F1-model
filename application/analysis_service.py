@@ -11,7 +11,7 @@ from domain.team import Team, TeamPerformance
 from domain.race import Race, RaceResult
 from domain.circuit import Circuit
 from data.processing import calculate_driver_stats, calculate_team_stats
-from visualization.plots import plot_grid_vs_finish, plot_race_results
+from visualization.base import plot_grid_vs_finish, plot_race_results
 from utils.helpers import ensure_directory, save_figure
 
 class AnalysisService:
