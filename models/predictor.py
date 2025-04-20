@@ -6,6 +6,7 @@ using multi-layered machine learning techniques.
 """
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from datetime import datetime
 import os
 import logging

@@ -7,6 +7,7 @@ import pandas as pd
 import os
 import sys
 import logging
+import numpy as np
 
 # Add parent directory to path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
