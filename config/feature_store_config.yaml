@@ -1,0 +1,48 @@
+# config/feature_store_config.yaml
+cache:
+  enabled: true
+  directory: "cache/features"
+  # Cache TTL in hours (0 means no expiration)
+  ttl_hours: 24
+
+logging:
+  level: "INFO"
+  
+features:
+  # Default features to calculate
+  default:
+    - "basic_features"
+    - "grid_features"
+    - "qualifying_features"
+    
+  # Feature definitions
+  definitions:
+    basic_features:
+      tags: ["base", "team", "driver"]
+      input_columns: ["Driver", "GridPosition"]
+    
+    grid_features:
+      tags: ["grid", "position"]
+      dependencies: ["basic_features"]
+    
+    driver_stats_features:
+      tags: ["driver", "statistics", "historical"]
+      dependencies: ["basic_features"]
+    
+    team_stats_features:
+      tags: ["team", "statistics", "historical"]
+      dependencies: ["basic_features"]
+    
+    qualifying_features:
+      tags: ["qualifying", "performance"]
+      dependencies: ["basic_features"]
+      input_columns: ["QualifyingTime", "Q1", "Q2", "Q3"]
+    
+    weather_features:
+      tags: ["weather", "external"]
+      dependencies: ["basic_features", "driver_stats_features"]
+    
+    track_features:
+      tags: ["track", "circuit"]
+      dependencies: ["basic_features"]
+      input_columns: ["Track"]

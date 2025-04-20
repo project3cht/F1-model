@@ -1,0 +1,24 @@
+# config/config.yaml
+model:
+  model_type: 'ensemble'
+  params:
+    n_estimators: 200
+    max_depth: 8
+    learning_rate: 0.05
+  features:
+    - 'GridPosition'
+    - 'TeamPerformanceFactor'
+    - 'DriverPerformanceFactor'
+    
+data:
+  historical_data_path: 'data/historical_races.csv'
+  sample_size: 1000
+  validation_split: 0.2
+  
+prediction:
+  default_safety_car_prob: 0.6
+  default_rain_prob: 0.0
+  simulation_runs: 1000
+
+log_level: 'INFO'
+output_dir: 'results'
